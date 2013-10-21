@@ -69,9 +69,23 @@ class Cache {
 		}
 		
 		if (!isset(self::$mimetypeIds[$mime])) {
-			$result = \OC_DB::executeAudited('INSERT INTO `*PREFIX*mimetypes`(`mimetype`) VALUES(?)', array($mime));
-			self::$mimetypeIds[$mime] = \OC_DB::insertid('*PREFIX*mimetypes');
-			self::$mimetypes[self::$mimetypeIds[$mime]] = $mime;
+			try{
+				$result = \OC_DB::executeAudited('INSERT INTO `*PREFIX*mimetypes`(`mimetype`) VALUES(?)', array($mime));
+				self::$mimetypeIds[$mime] = \OC_DB::insertid('*PREFIX*mimetypes');
+				self::$mimetypes[self::$mimetypeIds[$mime]] = $mime;
+			}
+			catch (\Doctrine\DBAL\DBALException $e){
+				\OC_Log::write('core', 'Exception during mimetype insertion: ' . $e->getmessage(), \OC_Log::DEBUG);
+				// in case of duplicate insert error, retrieve the existing mime type id
+				$result = \OC_DB::executeAudited('SELECT `id` FROM `*PREFIX*mimetypes` WHERE mimetype=?', array($mime));
+				$data = $result->fetchRow();
+	\OC_Log::write('core', 'got mimetype result data: '.$data, \OC_Log::DEBUG);
+				if ($data !== null){
+	\OC_Log::write('core', 'got mimetype id: '.$data['id'], \OC_Log::DEBUG);
+					return (int)$data['id'];
+				}
+				throw $e;
+			}
 		} 
 				
 		return self::$mimetypeIds[$mime];
@@ -212,9 +226,23 @@ class Cache {
 			$params[] = $this->getNumericStorageId();
 			$valuesPlaceholder = array_fill(0, count($queryParts), '?');
 
-			$sql = 'INSERT INTO `*PREFIX*filecache` (' . implode(', ', $queryParts) . ')'
-				. ' VALUES (' . implode(', ', $valuesPlaceholder) . ')';
-			\OC_DB::executeAudited($sql, $params);
+			try{
+				$sql = 'INSERT INTO `*PREFIX*filecache` (' . implode(', ', $queryParts) . ')'
+					. ' VALUES (' . implode(', ', $valuesPlaceholder) . ')';
+				\OC_DB::executeAudited($sql, $params);
+			}
+			catch (\Doctrine\DBAL\DBALException $e){
+				\OC_Log::write('core', 'Exception during file cache insertion: ' . $e->getmessage(), \OC_Log::DEBUG);
+				// in case of duplicate insert error, retrieve the existing file data
+				$fileId = self::getId($file);
+	\OC_Log::write('core', 'got file id: '.$fileId, \OC_Log::DEBUG);
+				
+				if ($fileId){
+					return $fileId;
+				}
+				throw $e;
+			}
+			
 
 			return (int)\OC_DB::insertid('*PREFIX*filecache');
 		}
